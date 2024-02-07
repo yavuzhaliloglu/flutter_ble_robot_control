@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
 
+// TODO: error handling for sending and receiving data will be showed in toast
+
 // ble handler
 final _ble = FlutterReactiveBle();
 
@@ -33,10 +35,12 @@ QualifiedCharacteristic batteryCharacteristic = initCharacteristic;
 class Controller extends StatefulWidget {
   // passed parameter from main page
   final List<Service> servicelist;
+  final StreamSubscription<ConnectionStateUpdate> connection;
 
   const Controller({
     Key? key,
     required this.servicelist,
+    required this.connection,
   }) : super(key: key);
 
   @override
@@ -121,41 +125,48 @@ class _ControllerState extends State<Controller> {
   // widget build
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('CLEANING_ROBOT'),
-        ),
-        body: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: MediaQuery.of(context).size.width / 3,
-                child: const JoystickExample(),
+    return PopScope(
+      onPopInvoked: (_) async {
+        print("onpopinvoke executed");
+        characteristicList = [];
+        widget.connection.pause();
+        widget.connection.cancel();
+      },
+        child: MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(
+              title: const Text('BLE CONTROL PANEL'),
+            ),
+            body: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: MediaQuery.of(context).size.width / 3,
+                    child: const JoystickExample(),
+                  ),
+                  Container(
+                    width: MediaQuery.of(context).size.width / 3,
+                    child: ParametersArea(), // Your custom widget
+                  ),
+                  Container(
+                    width: MediaQuery.of(context).size.width / 3,
+                    child: ControlArea(), // Your custom widget
+                  ),
+                ],
               ),
-              Container(
-                width: MediaQuery.of(context).size.width / 3,
-                child: ParametersArea(), // Your custom widget
-              ),
-              Container(
-                width: MediaQuery.of(context).size.width / 3,
-                child: ControlArea(), // Your custom widget
-              ),
-
-              // Add more widgets with fixed widths as needed
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+    ));
   }
 
-  @override
+/*  @override
   void dispose() {
-    // Clean up code here
+    widget.connection.cancel();
+    print("cancelled connection");
+    characteristicList = [];
     super.dispose();
-  }
+  }*/
 }
 
 // PARAMETERS AREA
@@ -181,26 +192,35 @@ class _ParametersAreaState extends State<ParametersArea> {
 
   // start to listen incoming ble data
   void _startListeningToBluetooth() {
+    print("subscribed sensor characteristic");
     // listen sensor data
     _ble.subscribeToCharacteristic(sensorCharacteristic).listen((data) {
-      setState(() {
-        sensorValues[0] = data[0];
-        sensorValues[1] = data[1];
-      });
+      if (this.mounted) {
+        setState(() {
+          sensorValues[0] = data[0];
+          sensorValues[1] = data[1];
+        });
+      }
     });
 
+    print("subscribed wf characteristic");
     // listen water flow data
     _ble.subscribeToCharacteristic(waterflowCharacteristic).listen((data) {
-      setState(() {
-        waterflow = data[0];
-      });
+      if (this.mounted) {
+        setState(() {
+          waterflow = data[0];
+        });
+      }
     });
 
+    print("subscribed battery characteristic");
     // listen battery data
     _ble.subscribeToCharacteristic(batteryCharacteristic).listen((data) {
-      setState(() {
-        battery = data[0];
-      });
+      if (this.mounted) {
+        setState(() {
+          battery = data[0];
+        });
+      }
     });
   }
 
@@ -270,7 +290,7 @@ class SliderBar extends StatefulWidget {
 class _SliderBarState extends State<SliderBar> {
   @override
   void sendSliderBarValue() {
-    _ble.writeCharacteristicWithResponse(motorCharacteristic, value: [
+    _ble.writeCharacteristicWithoutResponse(motorCharacteristic, value: [
       _x.toInt(),
       _y.toInt(),
       _currentSliderValue.toInt(),
@@ -320,13 +340,13 @@ class _ButtonsState extends State<Buttons> {
   bool isSteamStarted = false;
   Timer? _timer;
 
-  void initState(){
+  void initState() {
     super.initState();
   }
 
   // send motor values
   void sendMotorValues() {
-    _ble.writeCharacteristicWithResponse(motorCharacteristic, value: [
+    _ble.writeCharacteristicWithoutResponse(motorCharacteristic, value: [
       _x.toInt(),
       _y.toInt(),
       _currentSliderValue.toInt(),
@@ -340,11 +360,11 @@ class _ButtonsState extends State<Buttons> {
   void toggleDeviceState(bool isStarted) {
     // if isStarted true, data can send value to the ble device, so as toggle button, it has to stop with sending 0x00
     if (isStarted)
-      _ble.writeCharacteristicWithResponse(startStopCharacteristic,
+      _ble.writeCharacteristicWithoutResponse(startStopCharacteristic,
           value: [0x00]);
     // if isStarted false, data can not send value to the ble device, so as toggle button, it has to start with sending 0x01
     else
-      _ble.writeCharacteristicWithResponse(startStopCharacteristic,
+      _ble.writeCharacteristicWithoutResponse(startStopCharacteristic,
           value: [0x01]);
   }
 
@@ -352,9 +372,11 @@ class _ButtonsState extends State<Buttons> {
   void toggleValveState(bool isStarted) {
     // same as toggleDeviceState function
     if (isStarted)
-      _ble.writeCharacteristicWithResponse(valveCharacteristic, value: [0x00]);
+      _ble.writeCharacteristicWithoutResponse(valveCharacteristic,
+          value: [0x00]);
     else
-      _ble.writeCharacteristicWithResponse(valveCharacteristic, value: [0x01]);
+      _ble.writeCharacteristicWithoutResponse(valveCharacteristic,
+          value: [0x01]);
   }
 
   @override
@@ -467,7 +489,7 @@ class _JoystickExampleState extends State<JoystickExample> {
 
     print("sending values x: $motor_left and y: $motor_right");
     // sol sağ ön arka
-    _ble.writeCharacteristicWithResponse(motorCharacteristic, value: [
+    _ble.writeCharacteristicWithoutResponse(motorCharacteristic, value: [
       motor_left,
       motor_right,
       _currentSliderValue.toInt(),

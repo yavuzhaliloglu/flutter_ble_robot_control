@@ -31,44 +31,63 @@ class _MyAppState extends State<MyApp> {
   List<DiscoveredDevice> _devicesList = [];
   // scanning control variable
   bool isScanning = false;
-
+  // device connection states
+  Stream<ConnectionStateUpdate> get state => _deviceConnectionController.stream;
+  // connection update control stream
+  final _deviceConnectionController = StreamController<ConnectionStateUpdate>();
+  //service lists
+  List<Service> serviceIds = [];
+  // ble connection
+  late StreamSubscription<ConnectionStateUpdate> _connection;
   // initialization of widget
   @override
   void initState() {
+    print("myappstate initstate entered");
     super.initState();
-
     // get device permission from user
     _getPermission();
-
-    // vertical lock for screen
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
   }
 
-  @override
-  Stream<ConnectionStateUpdate> get state => _deviceConnectionController.stream;
+  // get permissions if required
+  void _getPermission() async {
+    // TODO: ios controller will be added
+    var blePermission = await Permission.bluetoothScan.status;
+    var locationPermission = await Permission.location.status;
+    if (blePermission.isDenied) {
+      if (await Permission.bluetoothScan.request().isGranted) {
+        if (await Permission.bluetoothConnect.request().isGranted) {
+          print("permission OK");
+        }
+      }
+    }
+    if (locationPermission.isDenied) {
+      if (await Permission.location.request().isGranted) {
+        if (await Permission.accessMediaLocation.request().isGranted) {
+          print("permission OK");
+        }
+      }
+    }
+  }
 
-  // connection update control stream
-  final _deviceConnectionController = StreamController<ConnectionStateUpdate>();
-  /*late StreamSubscription<ConnectionStateUpdate> _connection;*/
-  //service lists
-  List<Service> serviceIds = [];
-
-  // scan devices
+  // scan BLE devices
   void _scanForDevices() {
-    // invert the scanning control value
-    isScanning = !isScanning;
+    print("scanfordevices entered");
+
+    setState(() {
+      _devicesList = [];
+      isScanning = !isScanning;
+    });
+
     // scan devices
     final StreamSubscription<DiscoveredDevice> scanSubscription =
         _ble.scanForDevices(
       withServices: [],
+      scanMode: ScanMode.lowLatency,
     ).listen((device) {
       setState(() {
         // if device is not in list and it has name, add the list
         if (!_devicesList.any((element) => element.id == device.id) &&
-            device.name  != "") {
+            device.name != "") {
           _devicesList.add(device);
         }
       });
@@ -79,8 +98,9 @@ class _MyAppState extends State<MyApp> {
     // stop scanning after 10 seconds
     Future.delayed(const Duration(seconds: 10)).then((_) {
       // invert the scanning control value
-      isScanning = !isScanning;
-
+      setState(() {
+        isScanning = !isScanning;
+      });
       // stop scanning
       scanSubscription.cancel();
 
@@ -89,28 +109,23 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  // get permissions if required
-  void _getPermission() async {
-    var blePermission = await Permission.bluetoothScan.status;
-    if (blePermission.isDenied) {
-      if (await Permission.bluetoothScan.request().isGranted) {
-        if (await Permission.bluetoothConnect.request().isGranted) {
-          print("permission OK");
-        }
-      }
-    }
-  }
-
   // discover connected device's services
-  void _discoverServices(String deviceId) async {
-    // discover services
-    await _ble.discoverAllServices(deviceId);
-    // get discovered services
-    await _ble.getDiscoveredServices(deviceId).then((discoveredService) {
-      for (Service discoveredServiceElement in discoveredService) {
-        serviceIds.add(discoveredServiceElement);
+  Future<void> _discoverServices(String deviceId) async {
+    try {
+      // discover services
+      await _ble.discoverAllServices(deviceId);
+
+      // Get discovered services
+      List<Service> discoveredServices =
+          await _ble.getDiscoveredServices(deviceId);
+
+      // Add discovered services to the list
+      for (Service discoveredService in discoveredServices) {
+        serviceIds.add(discoveredService);
       }
-    });
+    } catch (e) {
+      print("Error Discovering Services: $e");
+    }
   }
 
   // connect device
@@ -126,32 +141,37 @@ class _MyAppState extends State<MyApp> {
     print(device.manufacturerData);
     print(device.serviceData);
     print(device.serviceUuids);
-
     // connection function
-    _ble.connectToDevice(id: device.id).listen(
+    _connection = _ble.connectToDevice(id: device.id).listen(
       (update) async {
         // connection update handler (async)
         print('ConnectionState for device : ${update.connectionState}');
-        _deviceConnectionController.add(update);
 
+        _deviceConnectionController.add(update);
         // if connection state is connected, discover services and navigate page
         if (update.connectionState == DeviceConnectionState.connected) {
+          print("CONNECTED DEVICE STREAM: ${_ble.connectedDeviceStream.length}");
 
           // wait for a while
-          await Future.delayed(Duration(seconds: 3));
+          await Future.delayed(Duration(seconds: 5));
 
           // discover services for connected device ID
-          _discoverServices(device.id);
+          await _discoverServices(device.id);
+
+          await _ble.requestConnectionPriority(
+              deviceId: device.id,
+              priority: ConnectionPriority.highPerformance);
 
           // wait for a while
           await Future.delayed(Duration(seconds: 3)); // Delay for 5 seconds
 
           //navigate the page with parameter
-          Navigator.push(
+          final result = Navigator.push(
             context,
             MaterialPageRoute(
                 builder: (context) => Controller(
                       servicelist: serviceIds,
+                      connection: _connection,
                     )),
           );
         }
@@ -180,8 +200,7 @@ class _MyAppState extends State<MyApp> {
                             _connectDevice(context, _devicesList[index]);
                           },
                           child: ListTile(
-                            title: Text(
-                                _devicesList[index].name),
+                            title: Text(_devicesList[index].name),
                             subtitle: Text(_devicesList[index].id),
                           ),
                         );
@@ -192,17 +211,29 @@ class _MyAppState extends State<MyApp> {
                   flex: 2,
                   child: Container(
                     margin: EdgeInsets.all(15.0),
+                    // TODO: style will be changed isscanning state
                     child: ElevatedButton(
                       onPressed: () {
-                        _scanForDevices();
+                        if (!isScanning) {
+                          _scanForDevices();
+                        } else {
+                          isScanning = !isScanning;
+                        }
                       },
-                      child: Text(isScanning ? 'Scanning' : 'Scan Devices', style: bleTextStyle),
+                      child: Text(isScanning ? 'Scanning' : 'Scan Devices',
+                          style: bleTextStyle),
                       style: bleBtnStyle,
                     ),
                   ))
             ],
           )),
     );
+  }
+
+  void dispose() {
+    // TODO: StreamController and StreamSubscription will be cleaned for memory management
+    print("dispose main");
+    super.dispose();
   }
 }
 
