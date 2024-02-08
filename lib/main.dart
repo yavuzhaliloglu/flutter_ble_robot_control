@@ -17,7 +17,9 @@ import 'package:flutter/services.dart';
   * ffa2: batarya
   * */
 
-void main() => runApp(MyApp());
+void main() {
+  runApp(MyApp());
+}
 
 class MyApp extends StatefulWidget {
   @override
@@ -39,11 +41,20 @@ class _MyAppState extends State<MyApp> {
   List<Service> serviceIds = [];
   // ble connection
   late StreamSubscription<ConnectionStateUpdate> _connection;
-  // initialization of widget
+  // selected message
+  String connectingMessage = "";
+
   @override
   void initState() {
     print("myappstate initstate entered");
+
     super.initState();
+
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.landscapeLeft,
+    ]);
+
     // get device permission from user
     _getPermission();
   }
@@ -111,6 +122,9 @@ class _MyAppState extends State<MyApp> {
 
   // discover connected device's services
   Future<void> _discoverServices(String deviceId) async {
+    setState(() {
+      serviceIds = [];
+    });
     try {
       // discover services
       await _ble.discoverAllServices(deviceId);
@@ -147,10 +161,20 @@ class _MyAppState extends State<MyApp> {
         // connection update handler (async)
         print('ConnectionState for device : ${update.connectionState}');
 
+        setState(() {
+          if (update.connectionState == DeviceConnectionState.connecting)
+            connectingMessage = "Connecting...";
+          if (update.connectionState == DeviceConnectionState.connected)
+            connectingMessage =
+                "Connected, wait for a while to load controller and ensure that you paired your device.";
+        });
+
         _deviceConnectionController.add(update);
+
         // if connection state is connected, discover services and navigate page
         if (update.connectionState == DeviceConnectionState.connected) {
-          print("CONNECTED DEVICE STREAM: ${_ble.connectedDeviceStream.length}");
+          print(
+              "CONNECTED DEVICE STREAM: ${_ble.connectedDeviceStream.length}");
 
           // wait for a while
           await Future.delayed(Duration(seconds: 5));
@@ -166,14 +190,19 @@ class _MyAppState extends State<MyApp> {
           await Future.delayed(Duration(seconds: 3)); // Delay for 5 seconds
 
           //navigate the page with parameter
-          final result = Navigator.push(
+          Navigator.push(
             context,
             MaterialPageRoute(
                 builder: (context) => Controller(
                       servicelist: serviceIds,
                       connection: _connection,
                     )),
-          );
+          ).then((_) {
+            setState(() {
+              _devicesList = [];
+              connectingMessage = "";
+            });
+          });
         }
       },
       onError: (Object e) => print('Connecting to device resulted in error $e'),
@@ -190,7 +219,7 @@ class _MyAppState extends State<MyApp> {
           body: Column(
             children: <Widget>[
               Expanded(
-                  flex: 18,
+                  flex: 16,
                   child: Container(
                     child: ListView.builder(
                       itemCount: _devicesList.length,
@@ -207,8 +236,9 @@ class _MyAppState extends State<MyApp> {
                       },
                     ),
                   )),
+              Expanded(flex: 2, child: Text(connectingMessage)),
               Expanded(
-                  flex: 2,
+                  flex: 4,
                   child: Container(
                     margin: EdgeInsets.all(15.0),
                     // TODO: style will be changed isscanning state
@@ -220,8 +250,24 @@ class _MyAppState extends State<MyApp> {
                           isScanning = !isScanning;
                         }
                       },
-                      child: Text(isScanning ? 'Scanning' : 'Scan Devices',
-                          style: bleTextStyle),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(isScanning ? 'Scanning  ' : 'Scan Devices  ',
+                              style: bleTextStyle),
+                          Container(
+                            child: isScanning
+                                ? SizedBox(
+                                    width: 20.0,
+                                    height: 20.0,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.0,
+                                    ))
+                                : Text(""),
+                          )
+                        ],
+                      ),
                       style: bleBtnStyle,
                     ),
                   ))

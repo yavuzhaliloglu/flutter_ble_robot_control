@@ -5,7 +5,6 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
 
 // TODO: error handling for sending and receiving data will be showed in toast
-
 // ble handler
 final _ble = FlutterReactiveBle();
 
@@ -49,6 +48,8 @@ class Controller extends StatefulWidget {
 
 // controller state handler
 class _ControllerState extends State<Controller> {
+  @override
+
   @override
   // set characteristic values and create a qualified characteristic
   QualifiedCharacteristic setCharacteristic(
@@ -120,17 +121,30 @@ class _ControllerState extends State<Controller> {
             setCharacteristic(c.id, c.service.id, c.service.deviceId);
       }
     }
+
+    /*
+    if(motorCharacteristic.characteristicId == Uuid.parse('charid') ||
+        valveCharacteristic.characteristicId == Uuid.parse('charid') ||
+        startStopCharacteristic.characteristicId == Uuid.parse('charid') ||
+        sensorCharacteristic.characteristicId == Uuid.parse('charid') ||
+        waterflowCharacteristic.characteristicId == Uuid.parse('charid') ||
+        batteryCharacteristic.characteristicId == Uuid.parse('charid')
+    ){
+      Navigator.pop(context);
+    }
+     */
   }
 
   // widget build
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      onPopInvoked: (_) async {
-        print("onpopinvoke executed");
-        characteristicList = [];
-        widget.connection.pause();
-        widget.connection.cancel();
+      onPopInvoked: (_){
+          print("ONPOPINVOKED EXECUTED");
+          setState(() {
+            characteristicList = [];
+          });
+          widget.connection.cancel();
       },
         child: MaterialApp(
           home: Scaffold(
@@ -160,13 +174,11 @@ class _ControllerState extends State<Controller> {
     ));
   }
 
-/*  @override
+ @override
   void dispose() {
-    widget.connection.cancel();
-    print("cancelled connection");
-    characteristicList = [];
+    print("DISPOSE EXECUTED");
     super.dispose();
-  }*/
+  }
 }
 
 // PARAMETERS AREA
@@ -338,7 +350,6 @@ class _ButtonsState extends State<Buttons> {
   // button toggle control variables
   bool isRobotStarted = false;
   bool isSteamStarted = false;
-  Timer? _timer;
 
   void initState() {
     super.initState();
@@ -529,3 +540,4 @@ final ButtonStyle btnStyle = ElevatedButton.styleFrom(
     borderRadius: BorderRadius.all(Radius.circular(2)),
   ),
 );
+

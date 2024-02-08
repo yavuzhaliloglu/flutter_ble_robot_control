@@ -54,7 +54,7 @@ android {
 dependencies {
     // Kotlin standard library
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-
+    implementation "com.polidea.rxandroidble2:rxandroidble:1.18.1"
     // Any additional dependencies can be added here
     // For example, if you needed to add a Firebase dependency, it might look like this:
     // implementation 'com.google.firebase:firebase-analytics-ktx'
